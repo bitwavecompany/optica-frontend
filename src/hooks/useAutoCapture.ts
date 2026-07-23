@@ -16,17 +16,16 @@ interface UseAutoCaptureReturn {
   startTracking: (videoElement: HTMLVideoElement, onCaptureCallback: () => void) => void;
   stopTracking: () => void;
   status: GuideStatus;
-  progress: number; // Porcentaje de 0 a 100 para la UI
+  progress: number;
   errorMessage: string | null;
 }
 
-// Configuración estricta de las reglas de pose
 const RULES = {
-  MAX_YAW_PITCH: 12, // Grados máximos permitidos de giro lateral o vertical
-  MAX_ROLL: 10,      // Grados máximos de inclinación hacia los hombros
-  MIN_FACE_PCT: 0.30,// El rostro debe ocupar al menos el 30% del ancho
-  MAX_FACE_PCT: 0.60,// El rostro no debe ocupar más del 60% del ancho
-  HOLD_TIME_MS: 1500 // Tiempo continuo que debe mantener la pose (1.5 segundos)
+  MAX_YAW_PITCH: 12,
+  MAX_ROLL: 10,
+  MIN_FACE_PCT: 0.45,
+  MAX_FACE_PCT: 0.75,
+  HOLD_TIME_MS: 3000
 };
 
 export function useAutoCapture(): UseAutoCaptureReturn {
@@ -39,7 +38,6 @@ export function useAutoCapture(): UseAutoCaptureReturn {
   const lastVideoTimeRef = useRef<number>(-1);
   const perfectStartTimeRef = useRef<number | null>(null);
 
-  // 1. Declarar stopTracking ANTES del useEffect para evitar el error de inmutabilidad
   const stopTracking = useCallback(() => {
     if (requestRef.current !== null) {
       cancelAnimationFrame(requestRef.current);
@@ -50,7 +48,6 @@ export function useAutoCapture(): UseAutoCaptureReturn {
     setStatus((prev) => (prev === "error" ? "error" : "no-face"));
   }, []);
 
-  // 2. Inicialización del modelo en modo VIDEO
   useEffect(() => {
     let isMounted = true;
 
@@ -67,8 +64,8 @@ export function useAutoCapture(): UseAutoCaptureReturn {
             delegate: "GPU",
           },
           outputFaceBlendshapes: false,
-          outputFacialTransformationMatrixes: true, // Necesario para HeadPose
-          runningMode: "VIDEO", // Crucial: Cambiado a VIDEO
+          outputFacialTransformationMatrixes: true,
+          runningMode: "VIDEO",
           numFaces: 1,
         });
 
@@ -77,7 +74,7 @@ export function useAutoCapture(): UseAutoCaptureReturn {
           setStatus("no-face");
         }
       } catch (err) {
-        console.error("Error inicializando MediaPipe (Video):", err);
+        console.error(err);
         if (isMounted) {
           setStatus("error");
           setErrorMessage("No se pudo cargar el motor de detección facial en vivo.");
@@ -94,14 +91,13 @@ export function useAutoCapture(): UseAutoCaptureReturn {
         landmarkerRef.current.close();
       }
     };
-  }, [stopTracking]); // 3. Agregar stopTracking como dependencia exhaustiva
+  }, [stopTracking]);
 
   const startTracking = useCallback(
     (videoElement: HTMLVideoElement, onCaptureCallback: () => void) => {
       if (!landmarkerRef.current || status === "error") return;
 
       const detectFrame = (currentTime: number) => {
-        // Evitamos procesar si el frame del video no ha cambiado
         if (videoElement.currentTime !== lastVideoTimeRef.current) {
           lastVideoTimeRef.current = videoElement.currentTime;
 
@@ -118,7 +114,6 @@ export function useAutoCapture(): UseAutoCaptureReturn {
             if (matrixData) {
               const headPose = extractHeadPose(matrixData);
               
-              // Calcular distancia usando las sienes (índices 234 y 454)
               const leftTemple = landmarks[234];
               const rightTemple = landmarks[454];
               const dx = rightTemple.x - leftTemple.x;
@@ -127,30 +122,25 @@ export function useAutoCapture(): UseAutoCaptureReturn {
 
               let currentStatus: GuideStatus = "perfect";
 
-              // 1. Evaluar tamaño (Distancia)
               if (faceWidthPct < RULES.MIN_FACE_PCT) {
                 currentStatus = "too-far";
               } else if (faceWidthPct > RULES.MAX_FACE_PCT) {
                 currentStatus = "too-close";
               } 
-              // 2. Evaluar ángulos frontal/vertical (Yaw, Pitch)
               else if (
                 Math.abs(headPose.yaw) > RULES.MAX_YAW_PITCH || 
                 Math.abs(headPose.pitch) > RULES.MAX_YAW_PITCH
               ) {
                 currentStatus = "bad-angle";
               } 
-              // 3. Evaluar inclinación (Roll)
               else if (Math.abs(headPose.roll) > RULES.MAX_ROLL) {
                 currentStatus = "tilted";
               }
 
               setStatus(currentStatus);
 
-              // Lógica del Temporizador de Disparo Automático
               if (currentStatus === "perfect") {
                 if (perfectStartTimeRef.current === null) {
-                  // Inicia el contador
                   perfectStartTimeRef.current = currentTime;
                 } else {
                   const elapsed = currentTime - perfectStartTimeRef.current;
@@ -158,14 +148,12 @@ export function useAutoCapture(): UseAutoCaptureReturn {
                   setProgress(currentProgress);
 
                   if (elapsed >= RULES.HOLD_TIME_MS) {
-                    // ¡Disparo!
                     stopTracking();
                     onCaptureCallback();
-                    return; // Abortamos el bucle, la foto ha sido tomada
+                    return;
                   }
                 }
               } else {
-                // Rompió la pose, reiniciar temporizador
                 perfectStartTimeRef.current = null;
                 setProgress(0);
               }
@@ -173,11 +161,9 @@ export function useAutoCapture(): UseAutoCaptureReturn {
           }
         }
 
-        // Continuar el bucle mientras estemos trackeando
         requestRef.current = requestAnimationFrame(detectFrame);
       };
 
-      // Iniciar el bucle de renderizado
       requestRef.current = requestAnimationFrame(detectFrame);
     },
     [status, stopTracking]

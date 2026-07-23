@@ -103,15 +103,12 @@ export function extractFaceDepthZ(landmarks: FaceLandmark[]): number {
   return avgZ;
 }
 
-// NUEVA FUNCIÓN: Calcula el porcentaje del ancho de la pantalla que ocupa el rostro
 export function extractFaceWidthPct(landmarks: FaceLandmark[]): number {
   const leftTemple  = landmarks[LANDMARK.LEFT_TEMPLE];
   const rightTemple = landmarks[LANDMARK.RIGHT_TEMPLE];
   
   if (!leftTemple || !rightTemple) return 0;
 
-  // MediaPipe devuelve coordenadas normalizadas (0 a 1), 
-  // por lo que la distancia directa nos da el porcentaje relativo.
   const dx = rightTemple.x - leftTemple.x;
   const dy = rightTemple.y - leftTemple.y;
   
@@ -130,16 +127,16 @@ export function calcularPosicionLentes(
   const rightOuter     = toPixel(landmarks[LANDMARK.RIGHT_EYE_OUTER],  displayW, displayH);
   const leftTemple     = toPixel(landmarks[LANDMARK.LEFT_TEMPLE],      displayW, displayH);
   const rightTemple    = toPixel(landmarks[LANDMARK.RIGHT_TEMPLE],     displayW, displayH);
-  const noseBridge     = toPixel(landmarks[LANDMARK.NOSE_BRIDGE],      displayW, displayH);
   const leftCheekbone  = toPixel(landmarks[LANDMARK.LEFT_CHEEKBONE],   displayW, displayH);
   const rightCheekbone = toPixel(landmarks[LANDMARK.RIGHT_CHEEKBONE],  displayW, displayH);
 
-  const templeWidth     = calcularDistancia(leftTemple, rightTemple);
-  const cheekboneWidth  = calcularDistancia(leftCheekbone, rightCheekbone);
-  const faceWidth       = Math.max(templeWidth, cheekboneWidth);
+  const eyeOuterDistance = calcularDistancia(leftOuter, rightOuter);
+  const templeWidth      = calcularDistancia(leftTemple, rightTemple);
 
   const depthScale  = Math.max(0.75, Math.min(1.25, 1 + faceDepthZ * 0.8));
-  const glassesWidth  = faceWidth * 1.06 * depthScale;
+
+  const baseWidth = (eyeOuterDistance * 1.45 + templeWidth * 0.90) / 2;
+  const glassesWidth  = baseWidth * depthScale;
   const glassesHeight = glassesWidth / aspectRatio;
 
   let centerX: number;
@@ -157,7 +154,7 @@ export function calcularPosicionLentes(
     eyeMidY = (leftOuter.y + rightOuter.y) / 2;
   }
 
-  const centerY = eyeMidY * 0.6 + noseBridge.y * 0.4;
+  const centerY = eyeMidY + (glassesHeight * 0.12);
 
   const rotation = calcularAngulo(leftOuter, rightOuter);
 
@@ -168,7 +165,7 @@ export function calcularPosicionLentes(
     height:     glassesHeight,
     rotation,
     depthScale,
-    quadPoints: [leftTemple, rightTemple, leftCheekbone, rightCheekbone] // [topLeft, topRight, bottomLeft, bottomRight]
+    quadPoints: [leftTemple, rightTemple, leftCheekbone, rightCheekbone]
   };
 }
 
@@ -190,7 +187,7 @@ export function calcularSombraGafas(
 
   const yawOffsetX  = (headPose.yaw   / 90) * transform.width * 0.12;
   const pitchFactor = Math.max(0.1, Math.min(1.0, 0.5 + headPose.pitch / 60));
-  const shadowY     = transform.y + transform.height * (1.0 + headPose.pitch * 0.004); // Base de 1.0 para que caiga debajo del lente
+  const shadowY     = transform.y + transform.height * (1.0 + headPose.pitch * 0.004);
 
   const directionOffsetX =
     lighting.direction === "left"  ?  transform.width * 0.06  :

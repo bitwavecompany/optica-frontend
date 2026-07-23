@@ -32,7 +32,7 @@ const VERT = `
 `;
 
 const FRAG = `
-  precision mediump float;
+  precision highp float;
   varying vec2 v_uv;
   uniform sampler2D u_sampler;
   uniform mat3 u_homography;
@@ -41,16 +41,13 @@ const FRAG = `
   uniform float u_tintStrength;
 
   void main() {
-    // 1. Usamos v_uv directo para que la homografía calce perfectamente con la pantalla
     vec3 uvh = u_homography * vec3(v_uv.x, v_uv.y, 1.0);
     vec2 uv = uvh.xy / uvh.z;
 
-    // 2. Descartamos los píxeles que queden fuera del cuadro del lente
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
       discard;
     }
 
-    // 3. Invertimos Y recién al leer la textura para no romper la matemática de la homografía
     vec4 color = texture2D(u_sampler, vec2(uv.x, 1.0 - uv.y));
     color.rgb = mix(color.rgb, u_tint * color.rgb, u_tintStrength);
     color.a *= u_opacity;
@@ -137,6 +134,30 @@ function getOrCreateState(w: number, h: number): { state: WebGLState; canvas: HT
   return { state, canvas: offscreen };
 }
 
+// Nueva función para forzar resoluciones POT (Power of Two)
+function makePowerOfTwo(img: HTMLImageElement): HTMLCanvasElement | HTMLImageElement {
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  
+  const isPowerOfTwo = (x: number) => (x & (x - 1)) === 0;
+  
+  if (isPowerOfTwo(w) && isPowerOfTwo(h)) {
+    return img;
+  }
+  
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.pow(2, Math.ceil(Math.log2(w)));
+  canvas.height = Math.pow(2, Math.ceil(Math.log2(h)));
+  
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (ctx) {
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+  
+  return img;
+}
+
 function loadTexture(gl: WebGLRenderingContext, img: HTMLImageElement, src: string): WebGLTexture {
   if (state && state.currentSrc === src && state.texture) {
     return state.texture;
@@ -146,12 +167,20 @@ function loadTexture(gl: WebGLRenderingContext, img: HTMLImageElement, src: stri
     gl.deleteTexture(state.texture);
   }
 
+  // Convertimos dinámicamente la imagen para que WebGL soporte Mipmaps
+  const safeSource = makePowerOfTwo(img);
+
   const tex = gl.createTexture()!;
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); 
+  
+  // Cargamos el origen optimizado (POT)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, safeSource);
+  
+  // Reactivamos Mipmaps y antialiasing de alta calidad
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -338,8 +367,6 @@ export function drawGlassesHomography(config: HomographyRenderConfig): void {
 
   gl.useProgram(s.program);
 
-  // LA CORRECCIÓN MÁS IMPORTANTE:
-  // Dibujamos a pantalla completa. La homografía se encarga de posicionar y rotar el lente correctamente.
   gl.bindBuffer(gl.ARRAY_BUFFER, s.positionBuffer);
   gl.bufferData(
     gl.ARRAY_BUFFER,
@@ -374,7 +401,7 @@ export function drawGlassesHomography(config: HomographyRenderConfig): void {
 
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-  ctx.drawImage(cvs, 0, 0, displayW, displayH);
+  ctx.drawImage(cvs, 0, 0);
 }
 
 export function disposeHomographyRenderer(): void {

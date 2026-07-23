@@ -217,7 +217,7 @@ export function CameraUpload({ onPhotoReady, disabled = false }: CameraUploadPro
               : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
           )}
         >
-          Cámara IA <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded-md ml-1">BETA</span>
+          Cámara Auto <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded-md ml-1">BETA</span>
         </button>
       </div>
 

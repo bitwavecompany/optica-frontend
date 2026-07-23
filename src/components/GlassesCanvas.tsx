@@ -19,12 +19,13 @@ export function GlassesCanvas({ photo, selectedGlasses }: GlassesCanvasProps) {
   const [photoImage,   setPhotoImage]   = useState<HTMLImageElement | null>(null);
   const [glassesImage, setGlassesImage] = useState<HTMLImageElement | null>(null);
   const [faceResult,   setFaceResult]   = useState<FaceDetectionResult | null>(null);
-  const [displaySize,  setDisplaySize]  = useState<{ w: number; h: number } | null>(null);
+  const [displaySize,  setDisplaySize]  = useState<{ w: number; h: number; dpr: number } | null>(null);
 
   const detectedForUrl = useRef<string | null>(null);
 
   const recalcSize = useCallback(() => {
     if (!containerRef.current || !photoImage) return;
+    const dpr = window.devicePixelRatio || 1;
     const containerW = containerRef.current.offsetWidth;
     const maxW = Math.min(containerW, 800);
     const ratio = Math.min(
@@ -35,6 +36,7 @@ export function GlassesCanvas({ photo, selectedGlasses }: GlassesCanvasProps) {
     setDisplaySize({
       w: Math.round(photoImage.naturalWidth  * ratio),
       h: Math.round(photoImage.naturalHeight * ratio),
+      dpr,
     });
   }, [photoImage]);
 
@@ -88,8 +90,8 @@ export function GlassesCanvas({ photo, selectedGlasses }: GlassesCanvasProps) {
       glassesImg: glassesImage,
       glassesImageSrc: selectedGlasses?.imagePath ?? "",
       faceResult,
-      displayW: displaySize.w,
-      displayH: displaySize.h,
+      displayW: displaySize.w * displaySize.dpr,
+      displayH: displaySize.h * displaySize.dpr,
       selectedGlasses,
     });
   }, [photoImage, glassesImage, faceResult, displaySize, selectedGlasses]);
@@ -111,8 +113,9 @@ export function GlassesCanvas({ photo, selectedGlasses }: GlassesCanvasProps) {
       >
         <canvas
           ref={canvasRef}
-          width={displaySize?.w ?? 0}
-          height={displaySize?.h ?? 0}
+          width={displaySize ? displaySize.w * displaySize.dpr : 0}
+          height={displaySize ? displaySize.h * displaySize.dpr : 0}
+          style={displaySize ? { width: displaySize.w, height: displaySize.h } : {}}
           className="block"
         />
 
