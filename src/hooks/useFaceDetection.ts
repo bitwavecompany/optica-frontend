@@ -1,6 +1,12 @@
 import { useCallback, useState, useRef, useEffect } from "react";
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import type { FaceDetectionResult } from "@/types";
+import {
+  extractHeadPose,
+  extractPupilCenters,
+  extractFaceDepthZ,
+} from "@/lib/faceUtils";
+import { disposeHomographyRenderer } from "@/lib/homographyRenderer";
 
 type DetectionStatus = "idle" | "initializing" | "processing" | "success" | "error";
 
@@ -11,30 +17,32 @@ interface UseFaceDetectionReturn {
 }
 
 export function useFaceDetection(): UseFaceDetectionReturn {
-  const [status, setStatus] = useState<DetectionStatus>("initializing");
+  const [status, setStatus]           = useState<DetectionStatus>("initializing");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  
+
   const landmarkerRef = useRef<FaceLandmarker | null>(null);
 
   useEffect(() => {
     let isMounted = true;
-    
+
     async function initModel() {
       try {
         const vision = await FilesetResolver.forVisionTasks(
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
         );
-        
+
         const landmarker = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-            delegate: "GPU"
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+            delegate: "GPU",
           },
-          outputFaceBlendshapes: false,
+          outputFaceBlendshapes:             false,
+          outputFacialTransformationMatrixes: true,
           runningMode: "IMAGE",
-          numFaces: 1
+          numFaces:    1,
         });
-        
+
         if (isMounted) {
           landmarkerRef.current = landmarker;
           setStatus("idle");
@@ -47,14 +55,15 @@ export function useFaceDetection(): UseFaceDetectionReturn {
         }
       }
     }
-    
+
     initModel();
-    
+
     return () => {
       isMounted = false;
       if (landmarkerRef.current) {
-         landmarkerRef.current.close();
+        landmarkerRef.current.close();
       }
+      disposeHomographyRenderer();
     };
   }, []);
 
@@ -64,25 +73,36 @@ export function useFaceDetection(): UseFaceDetectionReturn {
         setErrorMessage("El sistema de detección aún no está listo.");
         return null;
       }
-      
+
       setStatus("processing");
       setErrorMessage(null);
 
       try {
         const result = landmarkerRef.current.detect(imageElement);
-        
+
         if (!result.faceLandmarks || result.faceLandmarks.length === 0) {
           setStatus("error");
-          setErrorMessage("No se detectó ningún rostro en la foto. Intenta con otra imagen.");
+          setErrorMessage(
+            "No se detectó ningún rostro en la foto. Intenta con otra imagen."
+          );
           return null;
         }
 
+        const landmarks   = result.faceLandmarks[0];
+        const matrixData  = result.facialTransformationMatrixes?.[0]?.data ?? null;
+        const headPose    = matrixData ? extractHeadPose(matrixData) : null;
+        const pupilCenters = extractPupilCenters(landmarks);
+        const faceDepthZ   = extractFaceDepthZ(landmarks);
+
         setStatus("success");
-        
+
         return {
-          landmarks: result.faceLandmarks[0],
-          imageWidth: imageElement.naturalWidth,
+          landmarks,
+          imageWidth:  imageElement.naturalWidth,
           imageHeight: imageElement.naturalHeight,
+          headPose,
+          pupilCenters,
+          faceDepthZ,
         };
       } catch (err) {
         console.error("Error detectando rostro:", err);

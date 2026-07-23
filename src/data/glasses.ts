@@ -17,7 +17,6 @@ export const glassesCatalog: Glasses[] = [
     imagePath: "/lentes/lente-02.png",
     aspectRatio: 2.5,
   },
-  /*
   {
     id: "g003",
     name: "Redondos Vintage",
@@ -26,6 +25,7 @@ export const glassesCatalog: Glasses[] = [
     imagePath: "/lentes/lente-03.png",
     aspectRatio: 2.2,
   },
+  /*
   {
     id: "g004",
     name: "Cuadrado Moderno",

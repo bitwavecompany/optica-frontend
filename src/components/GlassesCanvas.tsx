@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { Stage, Layer, Image as KonvaImage } from "react-konva";
-import type { UploadedPhoto, Glasses, GlassesTransform, FaceDetectionResult } from "@/types";
+import { useEffect, useRef, useState, useCallback } from "react";
+import type { UploadedPhoto, Glasses, FaceDetectionResult } from "@/types";
 import { useFaceDetection } from "@/hooks/useFaceDetection";
-import { calcularPosicionLentes } from "@/lib/faceUtils";
+import { renderScene, clearCanvas } from "@/lib/canvasRenderer";
 
 interface GlassesCanvasProps {
   photo: UploadedPhoto;
@@ -14,31 +13,46 @@ const MAX_DISPLAY_HEIGHT = 600;
 export function GlassesCanvas({ photo, selectedGlasses }: GlassesCanvasProps) {
   const { detect, status, errorMessage } = useFaceDetection();
 
-  const [photoImage, setPhotoImage] = useState<HTMLImageElement | null>(null);
-  const [glassesImage, setGlassesImage] = useState<HTMLImageElement | null>(null);
-  const [faceResult, setFaceResult] = useState<FaceDetectionResult | null>(null);
-  const [containerWidth, setContainerWidth] = useState<number>(0);
-
+  const canvasRef    = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const [photoImage,   setPhotoImage]   = useState<HTMLImageElement | null>(null);
+  const [glassesImage, setGlassesImage] = useState<HTMLImageElement | null>(null);
+  const [faceResult,   setFaceResult]   = useState<FaceDetectionResult | null>(null);
+  const [displaySize,  setDisplaySize]  = useState<{ w: number; h: number } | null>(null);
+
   const detectedForUrl = useRef<string | null>(null);
 
-  useEffect(() => {
-    function updateWidth() {
-      if (containerRef.current) {
-        setContainerWidth(containerRef.current.offsetWidth);
-      }
-    }
-    window.addEventListener("resize", updateWidth);
-    updateWidth();
-    return () => window.removeEventListener("resize", updateWidth);
-  }, []);
+  const recalcSize = useCallback(() => {
+    if (!containerRef.current || !photoImage) return;
+    const containerW = containerRef.current.offsetWidth;
+    const maxW = Math.min(containerW, 800);
+    const ratio = Math.min(
+      maxW / photoImage.naturalWidth,
+      MAX_DISPLAY_HEIGHT / photoImage.naturalHeight,
+      1
+    );
+    setDisplaySize({
+      w: Math.round(photoImage.naturalWidth  * ratio),
+      h: Math.round(photoImage.naturalHeight * ratio),
+    });
+  }, [photoImage]);
 
   useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(recalcSize);
+    ro.observe(el);
+    recalcSize();
+    return () => ro.disconnect();
+  }, [recalcSize]);
+
+  useEffect(() => {
+    detectedForUrl.current = null;
     const img = new Image();
     img.onload = () => {
-      img.width = img.naturalWidth;
-      img.height = img.naturalHeight;
       setPhotoImage(img);
+      setFaceResult(null);
     };
     img.src = photo.url;
   }, [photo.url]);
@@ -46,60 +60,41 @@ export function GlassesCanvas({ photo, selectedGlasses }: GlassesCanvasProps) {
   useEffect(() => {
     if (!photoImage || status === "initializing") return;
     if (detectedForUrl.current === photo.url) return;
-
-    const runDetection = async () => {
-      detectedForUrl.current = photo.url;
-      const result = await detect(photoImage);
-      setFaceResult(result);
-    };
-
-    runDetection();
+    detectedForUrl.current = photo.url;
+    detect(photoImage).then((result) => setFaceResult(result));
   }, [photoImage, photo.url, status, detect]);
 
   useEffect(() => {
-    if (!selectedGlasses) return;
-
+    if (!selectedGlasses) {
+      Promise.resolve().then(() => setGlassesImage(null));
+      return;
+    }
     const img = new Image();
-    img.onload = () => {
-      img.width = img.naturalWidth;
-      img.height = img.naturalHeight;
-      setGlassesImage(img);
-    };
-    img.onerror = () => {
-      console.error("Error al cargar la imagen de los lentes. Revisa la ruta:", selectedGlasses.imagePath);
-    };
+    img.onload  = () => setGlassesImage(img);
+    img.onerror = () =>
+      console.error("Error al cargar la imagen de los lentes:", selectedGlasses.imagePath);
     img.src = selectedGlasses.imagePath;
-  }, [selectedGlasses?.id]);
+  }, [selectedGlasses]);
 
-  let displaySize: { w: number; h: number } | null = null;
-  
-  if (photoImage && containerWidth > 0) {
-    const maxWidth = Math.min(containerWidth, 800);
-    const widthRatio = maxWidth / photoImage.naturalWidth;
-    const heightRatio = MAX_DISPLAY_HEIGHT / photoImage.naturalHeight;
-    
-    const ratio = Math.min(widthRatio, heightRatio, 1);
-    
-    displaySize = {
-      w: Math.round(photoImage.naturalWidth * ratio),
-      h: Math.round(photoImage.naturalHeight * ratio)
-    };
-  }
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !displaySize || !photoImage) {
+      if (canvas) clearCanvas(canvas);
+      return;
+    }
+    void renderScene({
+      canvas,
+      photoImg: photoImage,
+      glassesImg: glassesImage,
+      glassesImageSrc: selectedGlasses?.imagePath ?? "",
+      faceResult,
+      displayW: displaySize.w,
+      displayH: displaySize.h,
+      selectedGlasses,
+    });
+  }, [photoImage, glassesImage, faceResult, displaySize, selectedGlasses]);
 
-  const transform: GlassesTransform | null =
-      faceResult && selectedGlasses && displaySize && glassesImage
-        ? calcularPosicionLentes(
-            faceResult.landmarks,
-            displaySize.w,
-            displaySize.h,
-            glassesImage.naturalWidth / glassesImage.naturalHeight
-          )
-        : null;
-
-  const glassesX = transform ? transform.x + transform.width / 2 : 0;
-  const glassesY = transform ? transform.y + transform.height / 2 : 0;
-
-  if (!displaySize || !photoImage || status === "initializing") {
+  if (status === "initializing" || (!displaySize && !photoImage)) {
     return (
       <div ref={containerRef} className="flex flex-col items-center justify-center w-full h-64 gap-3">
         <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
@@ -112,29 +107,14 @@ export function GlassesCanvas({ photo, selectedGlasses }: GlassesCanvasProps) {
     <div ref={containerRef} className="flex flex-col items-center gap-4 w-full">
       <div
         className="relative rounded-2xl overflow-hidden shadow-2xl"
-        style={{ width: displaySize.w, height: displaySize.h }}
+        style={displaySize ? { width: displaySize.w, height: displaySize.h } : {}}
       >
-        <Stage width={displaySize.w} height={displaySize.h}>
-          <Layer>
-            <KonvaImage
-              image={photoImage}
-              width={displaySize.w}
-              height={displaySize.h}
-            />
-            {glassesImage && transform && (
-              <KonvaImage
-                image={glassesImage}
-                x={glassesX}
-                y={glassesY}
-                width={transform.width}
-                height={transform.height}
-                rotation={transform.rotation}
-                offsetX={transform.width / 2}
-                offsetY={transform.height / 2}
-              />
-            )}
-          </Layer>
-        </Stage>
+        <canvas
+          ref={canvasRef}
+          width={displaySize?.w ?? 0}
+          height={displaySize?.h ?? 0}
+          className="block"
+        />
 
         {status === "processing" && (
           <div className="absolute inset-0 bg-slate-900/60 flex flex-col items-center justify-center gap-3 rounded-2xl">
