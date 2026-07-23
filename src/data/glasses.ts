@@ -8,6 +8,7 @@ export const glassesCatalog: Glasses[] = [
     category: "sol",
     imagePath: "/lentes/lente-01.png",
     aspectRatio: 2.8,
+    modelPath: "/lentes/lente-3d/lente-01.glb",
   },
   {
     id: "g002",

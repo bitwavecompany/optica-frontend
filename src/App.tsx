@@ -3,10 +3,15 @@ import type { UploadedPhoto, Glasses } from "@/types";
 import { CameraUpload } from "@/components/CameraUpload";
 import { GlassesCanvas } from "@/components/GlassesCanvas";
 import { GlassesCatalog } from "@/components/GlassesCatalog";
+import { TryOn3DView } from "@/components/TryOn3DView"; // ← agregar
+import clsx from "clsx";                                // ← agregar
+
+type AppMode = "photo" | "live3d"; // ← agregar
 
 export default function App() {
   const [photo, setPhoto] = useState<UploadedPhoto | null>(null);
   const [selectedGlasses, setSelectedGlasses] = useState<Glasses | null>(null);
+  const [appMode, setAppMode] = useState<AppMode>("photo"); // ← agregar
 
   function handlePhotoReady(newPhoto: UploadedPhoto) {
     setPhoto(newPhoto);
@@ -36,7 +41,34 @@ export default function App() {
             </div>
           </div>
 
-          {photo && (
+          {/* ── Selector de modo global ── */}
+          <div className="flex bg-slate-800 p-1 rounded-xl gap-1">
+            <button
+              onClick={() => setAppMode("photo")}
+              className={clsx(
+                "px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+                appMode === "photo"
+                  ? "bg-brand-500 text-white shadow"
+                  : "text-slate-400 hover:text-slate-200"
+              )}
+            >
+              📷 Foto
+            </button>
+            <button
+              onClick={() => setAppMode("live3d")}
+              className={clsx(
+                "px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1",
+                appMode === "live3d"
+                  ? "bg-brand-500 text-white shadow"
+                  : "text-slate-400 hover:text-slate-200"
+              )}
+            >
+              🎥 En vivo 3D
+              <span className="text-[9px] bg-white/20 px-1 py-0.5 rounded">BETA</span>
+            </button>
+          </div>
+
+          {photo && appMode === "photo" && (
             <button
               onClick={handleReset}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all duration-150 shrink-0"
@@ -51,27 +83,55 @@ export default function App() {
       </header>
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 md:px-6 py-6 md:py-8">
-        {!photo ? (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8">
-            <div className="text-center px-4">
-              <h2 className="text-slate-100 text-2xl font-semibold">
-                Pruébate lentes virtualmente
-              </h2>
-              <p className="text-slate-400 mt-2 text-sm max-w-sm mx-auto">
-                Sube una foto tuya y descubre qué modelo te queda mejor antes de comprar
-              </p>
-            </div>
-            <div className="w-full max-w-md">
-              <CameraUpload onPhotoReady={handlePhotoReady} />
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-center lg:items-start w-full">
-            <div className="flex-1 flex flex-col items-center gap-4 w-full">
-              <GlassesCanvas
-                photo={photo}
-                selectedGlasses={selectedGlasses}
-              />
+
+        {/* ══ MODO FOTO (comportamiento original) ══ */}
+        {appMode === "photo" && (
+          <>
+            {!photo ? (
+              <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8">
+                <div className="text-center px-4">
+                  <h2 className="text-slate-100 text-2xl font-semibold">
+                    Pruébate lentes virtualmente
+                  </h2>
+                  <p className="text-slate-400 mt-2 text-sm max-w-sm mx-auto">
+                    Sube una foto tuya y descubre qué modelo te queda mejor antes de comprar
+                  </p>
+                </div>
+                <div className="w-full max-w-md">
+                  <CameraUpload onPhotoReady={handlePhotoReady} />
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-center lg:items-start w-full">
+                <div className="flex-1 flex flex-col items-center gap-4 w-full">
+                  <GlassesCanvas photo={photo} selectedGlasses={selectedGlasses} />
+                </div>
+                <aside className="w-full lg:w-72 shrink-0 lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] flex flex-col">
+                  <GlassesCatalog
+                    selectedGlasses={selectedGlasses}
+                    onSelect={setSelectedGlasses}
+                  />
+                </aside>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ══ MODO EN VIVO 3D ══ */}
+        {appMode === "live3d" && (
+          <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-start w-full">
+            <div className="flex-1 flex flex-col gap-4 w-full">
+
+              {/* Aviso si el lente seleccionado no tiene modelo 3D */}
+              {selectedGlasses && !selectedGlasses.modelPath && (
+                <div className="w-full px-4 py-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30">
+                  <p className="text-yellow-400 text-sm text-center">
+                    ⚠️ Este modelo de lente no tiene archivo 3D todavía. Selecciona otro del catálogo.
+                  </p>
+                </div>
+              )}
+
+              <TryOn3DView selectedGlasses={selectedGlasses} />
             </div>
 
             <aside className="w-full lg:w-72 shrink-0 lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] flex flex-col">
@@ -82,6 +142,7 @@ export default function App() {
             </aside>
           </div>
         )}
+
       </main>
     </div>
   );

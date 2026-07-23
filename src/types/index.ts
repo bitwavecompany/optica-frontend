@@ -5,6 +5,7 @@ export interface Glasses {
   category: GlassesCategory;
   imagePath: string;
   aspectRatio: number;
+  modelPath?: string;
 }
 
 export type GlassesCategory = "sol" | "graduados" | "deportivos";
